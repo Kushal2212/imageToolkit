@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
@@ -21,13 +21,19 @@ function Header() {
   };
   return (
     <>
-      <button onClick={handleSignOUt}>Signout</button>
       {session ? (
         <div>Welcome</div>
       ) : (
-        <div>
-          <Link href={"/login"}>Login</Link>
-          <Link href={"/register"}>Register</Link>
+        <div className="flex justify-end items-center ">
+           <button type="button" className="btn btn-secondary flex ">
+            <Link href={"/login"}>Login</Link>
+           </button>
+          
+
+          <button type="button" className="btn btn-primary flex ml-3">
+            <Link href={"/register"}>Register</Link>
+          </button>
+          <button onClick={handleSignOUt} type="button" className="btn btn-error flex  ml-3 ">Signout</button>
         </div>
       )}
     </>

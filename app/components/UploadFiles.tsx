@@ -11,14 +11,19 @@ import {
 import { useRef, useState } from "react";
 
 const UploadFiles = () => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [video, setVideo] = useState<File | null>(null);
+  const [thumbnail, setThumbnail] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
 
   const [progress, setProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
 
   const authenticator = async () => {
-    const response = await fetch("/api/upload-auth");
+    const response = await fetch("/api/upload-auth",{
+      cache: "no-store",
+    });
 
     if (!response.ok) {
       throw new Error("Failed to authenticate upload");
@@ -28,18 +33,20 @@ const UploadFiles = () => {
   };
 
   const handleUpload = async () => {
-    const fileInput = fileInputRef.current;
-
-    if (!fileInput?.files?.length) {
+    if (!video) {
       alert("Please select a video");
       return;
     }
 
-    const file = fileInput.files[0];
+    const file = video;
 
-    // Validate type
     if (!file.type.startsWith("video/")) {
       alert("Please select a video file");
+      return;
+    }
+
+    if (!title.trim()) {
+      alert("Please enter a title");
       return;
     }
 
@@ -55,28 +62,19 @@ const UploadFiles = () => {
       setUploading(true);
       setProgress(0);
 
-      const {
-        signature,
-        expire,
-        token,
-        publicKey,
-      } = await authenticator();
-
       const abortController = new AbortController();
 
       abortControllerRef.current = abortController;
 
+      const videoAuth = await authenticator();
+
       const uploadResponse = await upload({
-        expire,
-        token,
-        signature,
-        publicKey,
+        ...videoAuth,
         file,
         fileName: file.name,
 
         onProgress: (event) => {
-          const percentage =
-            (event.loaded / event.total) * 100;
+          const percentage = (event.loaded / event.total) * 100;
 
           setProgress(Math.round(percentage));
         },
@@ -84,11 +82,45 @@ const UploadFiles = () => {
         abortSignal: abortController.signal,
       });
 
-      console.log("ImageKit response:", uploadResponse);
+      // console.log("ImageKit response:", uploadResponse);
 
-      // Later:
-      // send uploadResponse to your database API
+      if (!thumbnail) {
+        alert("Please select a thumbnail");
+        return;
+      }
 
+      const thumbnailAuth = await authenticator();
+
+      const thumbnailResponse = await upload({
+        ...thumbnailAuth,
+        file: thumbnail,
+        fileName: thumbnail.name,
+      });
+
+      // console.log("Thumbnail uploaded:", thumbnailResponse);
+
+      const response = await fetch("/api/videos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title,
+          description,
+          videoUrl: uploadResponse.url,
+          thumbnailUrl: thumbnailResponse.url,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save video");
+      }
+
+      const data = await response.json();
+
+      // console.log("Saved to MongoDB:", data);
+
+      alert("Video uploaded successfully!");
     } catch (error) {
       if (error instanceof ImageKitAbortError) {
         console.error("Upload aborted:", error.reason);
@@ -111,38 +143,108 @@ const UploadFiles = () => {
   };
 
   return (
-    <div>
-      <input
-        type="file"
-        ref={fileInputRef}
-        accept="video/*"
-      />
+    <div className="min-h-screen bg-base-200 flex items-center justify-center px-4 py-10">
+      <div className="card w-full max-w-2xl bg-base-100 shadow-xl">
+        <div className="card-body">
+          {/* Header */}
+          <h2 className="card-title text-2xl">Upload Video</h2>
+          <p className="text-base-content/60 mb-4">
+            Upload your video and provide some basic information.
+          </p>
 
-      <button
-        type="button"
-        onClick={handleUpload}
-        disabled={uploading}
-      >
-        {uploading ? "Uploading..." : "Upload video"}
-      </button>
+          <div className="form-control w-full mb-4">
+            <label className="label">
+              <span className="label-text font-medium">Video Title</span>
+            </label>
 
-      {uploading && (
-        <>
-          <progress
-            value={progress}
-            max={100}
-          />
+            <input
+              type="text"
+              placeholder="Enter video title"
+              className="input input-bordered w-full"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
 
-          <p>{progress}%</p>
+          <div className="form-control w-full mb-4">
+            <label className="label">
+              <span className="label-text font-medium">Description</span>
+            </label>
 
-          <button
-            type="button"
-            onClick={cancelUpload}
-          >
-            Cancel
-          </button>
-        </>
-      )}
+            <textarea
+              placeholder="Enter video description"
+              className="textarea textarea-bordered h-32 w-full"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+
+          <div className="form-control w-full mb-4">
+            <label className="label">
+              <span className="label-text font-medium">Video</span>
+            </label>
+
+            <input
+              type="file"
+              accept="video/*"
+              className="file-input file-input-bordered w-full"
+              onChange={(e) => {
+                setVideo(e.target.files?.[0] || null);
+              }}
+            />
+
+            {video && (
+              <label className="label">
+                <span className="label-text-alt">Selected: {video.name}</span>
+              </label>
+            )}
+          </div>
+
+          <div className="form-control w-full mb-6">
+            <label className="label">
+              <span className="label-text font-medium">Thumbnail</span>
+            </label>
+
+            <input
+              type="file"
+              accept="image/*"
+              className="file-input file-input-bordered w-full"
+              onChange={(e) => {
+                setThumbnail(e.target.files?.[0] || null);
+              }}
+            />
+
+            {thumbnail && (
+              <label className="label">
+                <span className="label-text-alt">
+                  Selected: {thumbnail.name}
+                </span>
+              </label>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              className="btn btn-primary flex-1"
+              onClick={handleUpload}
+              disabled={uploading}
+            >
+              {uploading ? `Uploading ${progress}%` : "Upload Video"}
+            </button>
+
+            {uploading && (
+              <button
+                type="button"
+                className="btn btn-error"
+                onClick={cancelUpload}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
